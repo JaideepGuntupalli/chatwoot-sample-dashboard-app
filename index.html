@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chatwoot Event Debugger</title>
+
+    <!-- Include React -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.development.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.development.js"></script>
+
+    <!-- Include Babel for JSX -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #f5f5f5;
+        }
+
+        .data-type {
+            font-family: monospace;
+            padding: 2px 6px;
+            border-radius: 4px;
+            background: #e5e7eb;
+            font-size: 0.9em;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="root"></div>
+
+    <!-- Your React component -->
+    <script type="text/babel">
+        const EventDebugger = () => {
+            const [events, setEvents] = React.useState([]);
+            const [requestCount, setRequestCount] = React.useState(0);
+            const [lastRequestTime, setLastRequestTime] = React.useState(null);
+
+            React.useEffect(() => {
+                console.log('Setting up event listener...');
+
+                const handleMessage = (event) => {
+                    const timestamp = new Date().toISOString();
+                    const timeSinceRequest = lastRequestTime ?
+                        `${(new Date() - new Date(lastRequestTime))}ms ago` : 'N/A';
+
+                    const eventCopy = {
+                        timestamp,
+                        timeSinceRequest,
+                        origin: event.origin,
+                        data: event.data,
+                        type: event.type,
+                        dataType: typeof event.data,
+                        dataLength: typeof event.data === 'string' ? event.data.length : null,
+                        isJSON: false,
+                        parseError: null
+                    };
+
+                    if (typeof event.data === 'string') {
+                        try {
+                            eventCopy.parsedData = JSON.parse(event.data);
+                            eventCopy.isJSON = true;
+                        } catch (e) {
+                            eventCopy.parseError = e.message;
+                            eventCopy.rawString = event.data;
+                        }
+                    } else if (typeof event.data === 'object') {
+                        eventCopy.parsedData = event.data;
+                        eventCopy.isJSON = true;
+                    }
+
+                    setEvents(prev => [eventCopy, ...prev]);
+                };
+
+                window.addEventListener('message', handleMessage);
+
+                // Send initial request after a short delay
+                setTimeout(() => {
+                    requestChatwootInfo();
+                }, 1000);
+
+                return () => {
+                    window.removeEventListener('message', handleMessage);
+                };
+            }, []);
+
+            const requestChatwootInfo = () => {
+                const timestamp = new Date().toISOString();
+                setLastRequestTime(timestamp);
+                setRequestCount(prev => prev + 1);
+
+                // Send the request
+                window.parent.postMessage('chatwoot-dashboard-app:fetch-info', '*');
+
+                console.log(`Request #${requestCount + 1} sent at ${timestamp}`);
+            };
+
+            // Auto-request every 5 seconds
+            React.useEffect(() => {
+                const interval = setInterval(requestChatwootInfo, 5000);
+                return () => clearInterval(interval);
+            }, []);
+
+            return (
+                <div className="p-4">
+                    <h1 className="text-2xl font-bold mb-4">Chatwoot Event Debugger</h1>
+
+                    <div className="mb-4 p-4 bg-blue-50 rounded border border-blue-200">
+                        <div className="font-bold text-blue-800">Debug Stats:</div>
+                        <div>Requests Sent: {requestCount}</div>
+                        <div>Last Request: {lastRequestTime ? new Date(lastRequestTime).toLocaleTimeString() : 'None'}</div>
+                        <div className="text-sm text-gray-600 mt-2">Auto-requesting every 5 seconds...</div>
+                    </div>
+
+                    <button
+                        onClick={requestChatwootInfo}
+                        className="mb-4 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+                    >
+                        Manual Request
+                    </button>
+
+                    <div className="space-y-4">
+                        {events.map((event, index) => (
+                            <div key={index} className="border rounded p-4 bg-white shadow">
+                                <div className="text-sm text-gray-500 mb-2">
+                                    Timestamp: {event.timestamp}
+                                    <br />
+                                    Time since last request: {event.timeSinceRequest}
+                                </div>
+                                <div className="mb-2">
+                                    <strong>Origin:</strong> {event.origin}
+                                </div>
+                                <div className="mb-2">
+                                    <strong>Event Type:</strong> {event.type}
+                                </div>
+                                <div className="mb-2">
+                                    <strong>Data Type:</strong> <span className="data-type">{event.dataType}</span>
+                                    {event.dataLength !== null && (
+                                        <span className="ml-2">(length: {event.dataLength})</span>
+                                    )}
+                                </div>
+
+                                <div>
+                                    <strong>Raw Data:</strong>
+                                    {event.dataType === 'string' ? (
+                                        <pre className="mt-2 p-2 bg-gray-100 rounded overflow-auto max-h-40 whitespace-pre-wrap break-words font-mono text-sm">
+                                            {event.data}
+                                        </pre>
+                                    ) : (
+                                        <pre className="mt-2 p-2 bg-gray-100 rounded overflow-auto max-h-40">
+                                            {JSON.stringify(event.data, null, 2)}
+                                        </pre>
+                                    )}
+                                </div>
+
+                                {event.parseError && (
+                                    <div className="mt-2 p-2 bg-red-50 rounded">
+                                        <strong>JSON Parse Error:</strong>
+                                        <div className="text-red-600">{event.parseError}</div>
+                                        <div className="mt-2">
+                                            <strong>First 100 characters:</strong>
+                                            <pre className="mt-1 p-2 bg-gray-100 rounded overflow-auto">
+                                                {event.rawString.slice(0, 100)}...
+                                            </pre>
+                                        </div>
+                                        <div className="mt-2">
+                                            <strong>String representation:</strong>
+                                            <pre className="mt-1 p-2 bg-gray-100 rounded overflow-auto">
+                                                {Array.from(event.rawString).map((char, i) => `${char}[${char.charCodeAt(0)}]`).join(' ')}
+                                            </pre>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {event.isJSON && (
+                                    <div className="mt-2">
+                                        <strong>Parsed Data:</strong>
+                                        <pre className="mt-2 p-2 bg-gray-100 rounded overflow-auto max-h-40">
+                                            {JSON.stringify(event.parsedData, null, 2)}
+                                        </pre>
+                                    </div>
+                                )}
+                            </div>
+                        ))}
+                    </div>
+
+                    {events.length === 0 && (
+                        <div className="text-gray-500 text-center p-4">
+                            No events received yet
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
+        // Render the app
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<EventDebugger />);
+    </script>
+</body>
+
+</html>
